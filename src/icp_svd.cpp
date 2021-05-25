@@ -7,6 +7,8 @@ int main() {
     const float a = 8;
     const float b = 2;
     const bool addNoise = true;
+    const double mean = 0.0;
+    const double stddev = 0.5;
     const bool debug = false;
 
     Eigen::Affine3f gtTrans;
@@ -19,12 +21,10 @@ int main() {
     std::vector<float> noise(numOfPoints, 0.0);
     if(addNoise) { 
         // Define random generator with Gaussian distribution
-        const double mean = 0.0;
-        const double stddev = 0.5;
         std::default_random_engine generator;
         std::normal_distribution<float> dist(mean, stddev);
         
-        // Add Gaussian noise
+        // Generate Gaussian noise
         for (auto& x : noise) {
             x = dist(generator);
         }
@@ -33,9 +33,16 @@ int main() {
     // Generate Points
     Eigen::MatrixXf srcPoints(numOfPoints, 4), dstPoints(numOfPoints, 4);
     for(int i = 0; i < numOfPoints; i++) {
-        srcPoints(i, 0) = a * cos(M_PI*2.0*(i+noise[i])/(float)numOfPoints);
-        srcPoints(i, 1) = b * sin(M_PI*2.0*(i+noise[i])/(float)numOfPoints);
-        srcPoints(i, 3) = 1.0;
+        if(addNoise) {
+            srcPoints(i, 0) = a * cos(M_PI*2.0*(i+noise[i])/(float)numOfPoints);
+            srcPoints(i, 1) = b * sin(M_PI*2.0*(i+noise[i])/(float)numOfPoints);
+            srcPoints(i, 3) = 1.0;
+        }
+        else {
+            srcPoints(i, 0) = a * cos(M_PI*2.0*i/(float)numOfPoints);
+            srcPoints(i, 1) = b * sin(M_PI*2.0*i/(float)numOfPoints);
+            srcPoints(i, 3) = 1.0;
+        }
 
         dstPoints(i, 0) = a * cos(M_PI*2.0*i/(float)numOfPoints);
         dstPoints(i, 1) = b * sin(M_PI*2.0*i/(float)numOfPoints);

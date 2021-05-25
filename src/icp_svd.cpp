@@ -1,7 +1,7 @@
 #include "../include/icp_svd.h"
 
 int main() {
-    const int numOfPoints = 100;
+    int numOfPoints = 100;
     const int angle = 180;
     const Eigen::Vector3f translation(10.0, 5.0, 0.0);
     const float a = 8;
@@ -10,6 +10,8 @@ int main() {
     const double mean = 0.0;
     const double stddev = 0.5;
     const bool debug = false;
+    const bool readPointCloud = true;
+    pcl::PointCloud<pcl::PointXYZ>::Ptr inputCloud(new pcl::PointCloud<pcl::PointXYZ>());
 
     Eigen::Affine3f gtTrans;
     gtTrans.setIdentity();
@@ -17,6 +19,12 @@ int main() {
     gtTrans.rotate(Eigen::AngleAxisf(DEG_TO_RAD(angle), Eigen::Vector3f::UnitZ()));
     std::cout << "GT Transformation Matrix" << std::endl;
     std::cout << gtTrans.matrix() << std::endl;
+
+    if(readPointCloud) {
+        pcl::io::loadPCDFile("../bun_zipper_res3.pcd", *inputCloud);
+        std::cout << "Points in input pcd " << inputCloud->size() << std::endl;
+        numOfPoints = inputCloud->size();
+    }
 
     std::vector<float> noise(numOfPoints, 0.0);
     if(addNoise) { 
@@ -32,24 +40,32 @@ int main() {
 
     // Generate Points
     Eigen::MatrixXf srcPoints(numOfPoints, 4), dstPoints(numOfPoints, 4);
-    for(int i = 0; i < numOfPoints; i++) {
-        if(addNoise) {
-            srcPoints(i, 0) = a * cos(M_PI*2.0*(i+noise[i])/(float)numOfPoints);
-            srcPoints(i, 1) = b * sin(M_PI*2.0*(i+noise[i])/(float)numOfPoints);
-            srcPoints(i, 3) = 1.0;
-        }
-        else {
-            srcPoints(i, 0) = a * cos(M_PI*2.0*i/(float)numOfPoints);
-            srcPoints(i, 1) = b * sin(M_PI*2.0*i/(float)numOfPoints);
-            srcPoints(i, 3) = 1.0;
-        }
 
-        dstPoints(i, 0) = a * cos(M_PI*2.0*i/(float)numOfPoints);
-        dstPoints(i, 1) = b * sin(M_PI*2.0*i/(float)numOfPoints);
-        dstPoints(i, 3) = 1.0;
+    if(readPointCloud) {
+        srcPoints = convertPcltoEigen(inputCloud);
+        dstPoints = (gtTrans.matrix() * srcPoints.transpose()).transpose();
     }
-    dstPoints = (gtTrans.matrix() * dstPoints.transpose()).transpose();
-    if(debug) {
+    else {
+        for(int i = 0; i < numOfPoints; i++) {
+            if(addNoise) {
+                srcPoints(i, 0) = a * cos(M_PI*2.0*(i+noise[i])/(float)numOfPoints);
+                srcPoints(i, 1) = b * sin(M_PI*2.0*(i+noise[i])/(float)numOfPoints);
+                srcPoints(i, 3) = 1.0;
+            }
+            else {
+                srcPoints(i, 0) = a * cos(M_PI*2.0*i/(float)numOfPoints);
+                srcPoints(i, 1) = b * sin(M_PI*2.0*i/(float)numOfPoints);
+                srcPoints(i, 3) = 1.0;
+            }
+
+            dstPoints(i, 0) = a * cos(M_PI*2.0*i/(float)numOfPoints);
+            dstPoints(i, 1) = b * sin(M_PI*2.0*i/(float)numOfPoints);
+            dstPoints(i, 3) = 1.0;
+        }
+        dstPoints = dstPoints * gtTrans.matrix();
+    }
+
+    if(debug && false) {
         std::cout << "src points" << std::endl;
         std::cout << srcPoints << std::endl;
         std::cout << "dst points" << std::endl;
@@ -67,8 +83,8 @@ int main() {
     }
 
     // Compute cross correlation matrix
-    dstPoints.rowwise() -= dstCom.transpose();
     srcPoints.rowwise() -= srcCom.transpose();
+    dstPoints.rowwise() -= dstCom.transpose();
     if(debug) {
         std::cout << "src points - com" <<std::endl;
         std::cout << srcPoints << std::endl;
@@ -99,6 +115,13 @@ int main() {
     computedTrans.block<4,1>(0,3) = computedT;
     std::cout << "Computed Transform" << std::endl;
     std::cout << computedTrans << std::endl;
+
+    if(readPointCloud) {
+        pcl::PointCloud<pcl::PointXYZ>::Ptr dstCloud1 = convertEigenToPcl((computedTrans.matrix() * srcPoints.transpose()).transpose());
+        pcl::PointCloud<pcl::PointXYZ>::Ptr dstCloud2 = convertEigenToPcl(dstPoints);
+        pcl::io::savePCDFile("../transformed_bunny.pcd", *dstCloud1);
+        pcl::io::savePCDFile("../bunny_dst.pcd", *dstCloud2);
+    }
 
     return 0;
 }

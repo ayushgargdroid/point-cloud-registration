@@ -2,7 +2,7 @@
 
 int main() {
     int numOfPoints = 100;
-    const int angle = 180;
+    const int angle = 30;
     const Eigen::Vector3f translation(10.0, 5.0, 0.0);
     const float a = 8;
     const float b = 2;
@@ -62,7 +62,7 @@ int main() {
             dstPoints(i, 1) = b * sin(M_PI*2.0*i/(float)numOfPoints);
             dstPoints(i, 3) = 1.0;
         }
-        dstPoints = dstPoints * gtTrans.matrix();
+        dstPoints = (gtTrans.matrix() * dstPoints.transpose()).transpose();
     }
 
     if(debug && false) {
@@ -85,13 +85,13 @@ int main() {
     // Compute cross correlation matrix
     srcPoints.rowwise() -= srcCom.transpose();
     dstPoints.rowwise() -= dstCom.transpose();
-    if(debug) {
+    if(debug && false) {
         std::cout << "src points - com" <<std::endl;
         std::cout << srcPoints << std::endl;
         std::cout << "dst points - com" <<std::endl;
         std::cout << dstPoints << std::endl;
     }
-    Eigen::MatrixXf H = dstPoints.leftCols(3).transpose() * srcPoints.leftCols(3);
+    Eigen::MatrixXf H = srcPoints.leftCols(3).transpose() * dstPoints.leftCols(3);
     if(debug) {
         std::cout << "Cross correlation matrix" <<std::endl;
         std::cout << H << std::endl;
@@ -119,8 +119,8 @@ int main() {
     if(readPointCloud) {
         pcl::PointCloud<pcl::PointXYZ>::Ptr dstCloud1 = convertEigenToPcl((computedTrans.matrix() * srcPoints.transpose()).transpose());
         pcl::PointCloud<pcl::PointXYZ>::Ptr dstCloud2 = convertEigenToPcl(dstPoints);
-        pcl::io::savePCDFile("../transformed_bunny.pcd", *dstCloud1);
-        pcl::io::savePCDFile("../bunny_dst.pcd", *dstCloud2);
+        pcl::io::savePCDFile("../results/transformed_bunny.pcd", *dstCloud1);
+        pcl::io::savePCDFile("../results/bunny_dst.pcd", *dstCloud2);
     }
 
     return 0;

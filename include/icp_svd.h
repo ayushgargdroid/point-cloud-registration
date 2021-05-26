@@ -9,7 +9,17 @@
 #include <eigen3/Eigen/SVD>
 
 #include <pcl/point_cloud.h>
+#include <pcl/point_types.h>
 #include <pcl/io/pcd_io.h>
+#include <pcl/common/centroid.h>
+#include <pcl/common/eigen.h>
+#include <pcl/kdtree/kdtree_flann.h>
+
+#include <pcl/features/normal_3d.h>
+#include <pcl/features/feature.h>
+#include <pcl/kdtree/kdtree.h>
+#include <pcl/kdtree/flann.h>
+#include <pcl/search/kdtree.h>
 
 #include <math.h>
 
@@ -17,3 +27,4 @@
 
 Eigen::MatrixXf convertPcltoEigen(pcl::PointCloud<pcl::PointXYZ>::ConstPtr inputCloud);
 pcl::PointCloud<pcl::PointXYZ>::Ptr convertEigenToPcl(Eigen::MatrixXf inputPoints);
+pcl::PointCloud<pcl::PointNormal>::Ptr computeNormals(pcl::PointCloud<pcl::PointXYZ>::ConstPtr inputCloud, float searchRadius);

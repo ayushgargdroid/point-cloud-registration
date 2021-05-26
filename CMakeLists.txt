@@ -3,7 +3,7 @@ project(icp)
 
 set (CMAKE_CXX_STANDARD 14)
 
-find_package(PCL REQUIRED QUIET COMPONENTS io common)
+find_package(PCL REQUIRED QUIET COMPONENTS io common kdtree search features)
 find_package(Eigen3 REQUIRED)
 
 include_directories(include)

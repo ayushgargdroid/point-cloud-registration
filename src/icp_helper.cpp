@@ -13,6 +13,19 @@ Eigen::MatrixXf convertPcltoEigen(pcl::PointCloud<pcl::PointXYZ>::ConstPtr input
     return srcPoints;
 }
 
+Eigen::MatrixXf convertPcltoEigen(pcl::PointCloud<pcl::PointXYZ>::ConstPtr inputCloud, std::vector<int> indices) {
+    Eigen::MatrixXf srcPoints(inputCloud->size(), 4);
+    int i = 0;
+    for(int indx : indices) {
+        srcPoints(i, 0) = inputCloud->points[indx].x;
+        srcPoints(i, 1) = inputCloud->points[indx].y;
+        srcPoints(i, 2) = inputCloud->points[indx].z;
+        srcPoints(i, 3) = 1.0;
+        i++;
+    }
+    return srcPoints;
+}
+
 pcl::PointCloud<pcl::PointXYZ>::Ptr convertEigenToPcl(Eigen::MatrixXf inputPoints) {
     pcl::PointCloud<pcl::PointXYZ>::Ptr cloud(new pcl::PointCloud<pcl::PointXYZ>());
     cloud->width = inputPoints.rows();
@@ -57,4 +70,35 @@ pcl::PointCloud<pcl::PointNormal>::Ptr computeNormals(pcl::PointCloud<pcl::Point
         normalCloud->points.emplace_back(normalPt);
     }
     return normalCloud;
+}
+
+std::tuple<std::vector<int>, std::vector<int>> getNearestCorrespondences(pcl::PointCloud<pcl::PointXYZ>::ConstPtr srcCloud, pcl::PointCloud<pcl::PointXYZ>::ConstPtr dstCloud, float maxDist) {
+
+    pcl::KdTreeFLANN<pcl::PointXYZ>::Ptr treeSearch(new pcl::KdTreeFLANN<pcl::PointXYZ>());
+    treeSearch->setInputCloud(dstCloud);
+
+    std::vector<int> srcIndx, dstIndx;
+    std::vector<float> dist;
+    std::vector<int> indx;
+
+    for(int pti = 0; pti < srcCloud->size(); pti++) {
+        indx.clear();
+        dist.clear();
+
+        pcl::PointXYZ srcPt = srcCloud->points[pti];
+        treeSearch->nearestKSearch(srcPt, 1, indx, dist);
+
+        if(indx.size() > 0 && dist[0] < maxDist) {
+            srcIndx.push_back(pti);
+            dstIndx.push_back(indx[0]);
+        }
+
+    }
+
+    return {srcIndx, dstIndx};
+
+}
+
+float getFitnessScore(Eigen::MatrixXf srcPoints, Eigen::MatrixXf dstPoints) {
+    return (dstPoints - srcPoints).norm();
 }

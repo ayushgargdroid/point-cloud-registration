@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.16)
 project(icp)
 
-set (CMAKE_CXX_STANDARD 14)
+set (CMAKE_CXX_STANDARD 17)
 
 find_package(PCL REQUIRED QUIET COMPONENTS io common kdtree search features)
 find_package(Eigen3 REQUIRED)

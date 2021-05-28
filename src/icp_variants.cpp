@@ -2,6 +2,7 @@
 
 int main(int argc, char* argv[]) {
     const int angle = atoi(argv[1]);
+    const bool estimateInitOri = atoi(argv[2]);
     const Eigen::Vector3f translation(10.0, 5.0, 0.0);
     const bool debug = false;
     const std::string pcdFile = "../bun_zipper_res3.pcd";
@@ -28,6 +29,7 @@ int main(int argc, char* argv[]) {
 
     // Generate transformed PC
     pcl::transformPointCloud(*srcCloud, *dstCloud, gtTrans.matrix());
+    pcl::io::savePCDFile("../results/bunny_dst.pcd", *dstCloud);
 
     // Compute COM
     pcl::PointXYZ srcComPt, dstComPt;
@@ -51,11 +53,56 @@ int main(int argc, char* argv[]) {
     initTrans(2,3) = dstComPt.z - srcComPt.z;
     pcl::transformPointCloud(*srcCloud, *srcCloud, initTrans);
     finalTrans = initTrans * finalTrans;
-    pcl::io::savePCDFile("../results/bunny_dst.pcd", *dstCloud);
+
+    if(estimateInitOri) {
+        std::cout << "Using PCA for initial Orientation estimate" << std::endl;
+        // Compute Eigen vectors for the point clouds for initial orientation
+        Eigen::Matrix3f srcCov, dstCov;
+        Eigen::Matrix3f srcEigenVec, dstEigenVec;
+        Eigen::Vector3f srcEigenVal, dstEigenVal;
+        pcl::computeCovarianceMatrix(*srcCloud, srcCov);
+        pcl::computeCovarianceMatrix(*dstCloud, dstCov);
+        pcl::eigen33(srcCov, srcEigenVec, srcEigenVal);
+        pcl::eigen33(dstCov, dstEigenVec, dstEigenVal);
+
+        // Compute Orientation estimate by aligning eigen values
+        // https://www.cse.wustl.edu/~taoju/cse554/lectures/lect07_Alignment.pdf
+        std::vector<Eigen::Matrix3f> possibleAssignments(4);
+        possibleAssignments[0].setIdentity();
+        possibleAssignments[1] << 1, 0, 0, 0, -1, 0, 0, 0, -1;
+        possibleAssignments[2] << -1, 0, 0, 0, 1, 0, 0, 0, -1;
+        possibleAssignments[3] << -1, 0, 0, 0, -1, 0, 0, 0, 1;
+        int minTr = INT_MAX;
+        int chosenAssignment = -1;
+        for(int possibleAssignment = 0; possibleAssignment < possibleAssignments.size(); possibleAssignment++) {
+            float tr = fabs(((possibleAssignments[possibleAssignment] * srcEigenVec.transpose()).transpose()).trace());
+            if(tr < minTr) {
+                chosenAssignment = possibleAssignment;
+                minTr = tr;
+            }
+        }
+        initTrans.setIdentity();
+        initTrans.block<3,3>(0,0) = (possibleAssignments[chosenAssignment] * dstEigenVec.transpose()).transpose() * (possibleAssignments[chosenAssignment] * srcEigenVec.transpose());
+        pcl::transformPointCloud(*srcCloud, *srcCloud, initTrans);
+        finalTrans = initTrans * finalTrans;
+
+
+        if(debug) {
+            std::cout << "Src Eigen Values " << srcEigenVal.transpose() << std::endl;
+            std::cout << srcEigenVec << std::endl;
+            std::cout << "Dst Eigen Values " << dstEigenVal.transpose() << std::endl;
+            std::cout << dstEigenVec << std::endl;
+
+            pcl::io::savePCDFile("../results/bunny_src1.pcd", *srcCloud);
+            pcl::transformPointCloud(*srcCloud, *srcCloud, initTrans);
+            pcl::io::savePCDFile("../results/bunny_src2.pcd", *srcCloud);
+            std::cout << "src transform\n " << initTrans << std::endl;
+        }
+    }
 
     if(debug) {
         std::cout << "Initial Guess" << std::endl;
-        std::cout << initTrans << std::endl;
+        std::cout << finalTrans << std::endl;
     }
 
     for(int iter = 0; iter < maxIters; iter ++) {
@@ -89,7 +136,7 @@ int main(int argc, char* argv[]) {
         float fitnessScore = getFitnessScore(srcPoints, dstPoints);
         if(debug) {
             std::cout << "Iter " << iter << " fitness score " << fitnessScore << std::endl;
-            std::cout << "Trans\n" << computedTrans << std::endl;
+            // std::cout << "Trans\n" << computedTrans << std::endl;
         }
 
         // Transform src point cloud to the new computedTrans

@@ -3,17 +3,16 @@
 int main(int argc, char* argv[]) {
     const int angle = atoi(argv[1]);
     const bool estimateInitOri = atoi(argv[2]);
-    const Eigen::Vector3f translation(10.0, 5.0, 0.0);
-    const bool debug = false;
+    const Eigen::Vector3f translation(0.0, 0.0, 0.0);
+    const bool debug = true;
     const std::string pcdFile = "../bun_zipper_res3.pcd";
-    const int maxIters = 200;
+    const int maxIters = 100;
     const float maxError = 0.01;
-    const float maxCorrespondenceDist = 0.01;
+    const float maxCorrespondenceDist = 0.001;
 
     pcl::PointCloud<pcl::PointXYZ>::Ptr srcCloud(new pcl::PointCloud<pcl::PointXYZ>());
     pcl::PointCloud<pcl::PointXYZ>::Ptr origSrcCloud(new pcl::PointCloud<pcl::PointXYZ>());
     pcl::PointCloud<pcl::PointXYZ>::Ptr dstCloud(new pcl::PointCloud<pcl::PointXYZ>());
-    pcl::PointCloud<pcl::PointXYZ>::Ptr alignedCloud(new pcl::PointCloud<pcl::PointXYZ>());
     int numOfPoints;
 
     pcl::io::loadPCDFile(pcdFile, *srcCloud);
@@ -56,47 +55,75 @@ int main(int argc, char* argv[]) {
 
     if(estimateInitOri) {
         std::cout << "Using PCA for initial Orientation estimate" << std::endl;
-        // Compute Eigen vectors for the point clouds for initial orientation
-        Eigen::Matrix3f srcCov, dstCov;
-        Eigen::Matrix3f srcEigenVec, dstEigenVec;
+        // Compute Eigen vectors for the point clouds for initial orientation using PCA
+        Eigen::Matrix3f srcEigenVec, dstEigenVec, dstEigenVecFix1, dstEigenVecFix2;
         Eigen::Vector3f srcEigenVal, dstEigenVal;
-        pcl::computeCovarianceMatrix(*srcCloud, srcCov);
-        pcl::computeCovarianceMatrix(*dstCloud, dstCov);
-        pcl::eigen33(srcCov, srcEigenVec, srcEigenVal);
-        pcl::eigen33(dstCov, dstEigenVec, dstEigenVal);
+        Eigen::Matrix3f srcCov, dstCov;
+
+        Eigen::MatrixXf srcPoints = convertPcltoEigen(srcCloud);
+        Eigen::MatrixXf dstPoints = convertPcltoEigen(dstCloud);
+        Eigen::JacobiSVD<Eigen::MatrixXf> srcSvd(srcPoints.leftCols(3), Eigen::ComputeFullV);
+        Eigen::JacobiSVD<Eigen::MatrixXf> dstSvd(dstPoints.leftCols(3), Eigen::ComputeFullV);
+        srcEigenVal = srcSvd.singularValues().reverse();
+        dstEigenVal = dstSvd.singularValues().reverse();
+        srcEigenVec = srcSvd.matrixV().rowwise().reverse();
+        dstEigenVec = dstSvd.matrixV().rowwise().reverse();
 
         // Compute Orientation estimate by aligning eigen values
-        // https://www.cse.wustl.edu/~taoju/cse554/lectures/lect07_Alignment.pdf
-        std::vector<Eigen::Matrix3f> possibleAssignments(4);
-        possibleAssignments[0].setIdentity();
-        possibleAssignments[1] << 1, 0, 0, 0, -1, 0, 0, 0, -1;
-        possibleAssignments[2] << -1, 0, 0, 0, 1, 0, 0, 0, -1;
-        possibleAssignments[3] << -1, 0, 0, 0, -1, 0, 0, 0, 1;
-        int minTr = INT_MAX;
-        int chosenAssignment = -1;
-        for(int possibleAssignment = 0; possibleAssignment < possibleAssignments.size(); possibleAssignment++) {
-            float tr = fabs(((possibleAssignments[possibleAssignment] * srcEigenVec.transpose()).transpose()).trace());
-            if(tr < minTr) {
-                chosenAssignment = possibleAssignment;
-                minTr = tr;
+        // PCA eigenvectors are not orthonormal so there is ambiguity, hence taking 2 guesses and finding which one has highest correspondences with dst cloud
+        // This check should strictly follow right hand rule cross product
+        if(verifyRightHandRule(dstEigenVec)) {
+            initTrans.setIdentity();
+            initTrans.block<3,3>(0,0) = dstEigenVec * srcEigenVec.transpose();
+            pcl::transformPointCloud(*srcCloud, *srcCloud, initTrans);
+        }
+        else {
+            pcl::PointCloud<pcl::PointXYZ>::Ptr alignedCloud1(new pcl::PointCloud<pcl::PointXYZ>());
+            pcl::PointCloud<pcl::PointXYZ>::Ptr alignedCloud2(new pcl::PointCloud<pcl::PointXYZ>());
+            Eigen::Matrix4f oriTrans1, oriTrans2;
+            dstEigenVecFix1 = dstEigenVec;
+            dstEigenVecFix2 = dstEigenVec;
+            dstEigenVecFix1.col(1) *= -1;
+            dstEigenVecFix2.col(0) *= -1;
+
+            oriTrans1.setIdentity();
+            oriTrans1.block<3,3>(0,0) = dstEigenVecFix1 * srcEigenVec.transpose();
+            pcl::transformPointCloud(*srcCloud, *alignedCloud1, oriTrans1);
+            auto[srcIndx1, dstIndx1] = getNearestCorrespondences(alignedCloud1, dstCloud, maxCorrespondenceDist);
+            // pcl::io::savePCDFile("../results/init_bunny1.pcd", *alignedCloud1);
+
+            oriTrans2.setIdentity();
+            oriTrans2.block<3,3>(0,0) = dstEigenVecFix2 * srcEigenVec.transpose();
+            pcl::transformPointCloud(*srcCloud, *alignedCloud2, oriTrans2);
+            auto[srcIndx2, dstIndx2] = getNearestCorrespondences(alignedCloud2, dstCloud, maxCorrespondenceDist);
+            // pcl::io::savePCDFile("../results/init_bunny2.pcd", *alignedCloud2);
+
+            initTrans.setIdentity();
+            Eigen::Affine3f tempAffine1, tempAffine2;
+            tempAffine1.matrix() << oriTrans1;
+            tempAffine2.matrix() << oriTrans2;
+            float x1, x2, y1, y2, z1, z2;
+            Eigen::Vector3f t1 = tempAffine1.rotation().eulerAngles(2, 1 ,0) / M_PI * 180.0;
+            Eigen::Vector3f t2 = tempAffine2.rotation().eulerAngles(2, 1 ,0) / M_PI * 180.0;
+            if(srcIndx1.size() > srcIndx2.size()) {
+                dstEigenVec = dstEigenVecFix1;
+                initTrans = oriTrans1;
+                srcCloud = alignedCloud1;
+            }
+            else {
+                dstEigenVec = dstEigenVecFix2;
+                initTrans = oriTrans2;
+                srcCloud = alignedCloud2;
             }
         }
-        initTrans.setIdentity();
-        initTrans.block<3,3>(0,0) = (possibleAssignments[chosenAssignment] * dstEigenVec.transpose()).transpose() * (possibleAssignments[chosenAssignment] * srcEigenVec.transpose());
-        pcl::transformPointCloud(*srcCloud, *srcCloud, initTrans);
-        finalTrans = initTrans * finalTrans;
 
+        finalTrans = initTrans * finalTrans;
 
         if(debug) {
             std::cout << "Src Eigen Values " << srcEigenVal.transpose() << std::endl;
             std::cout << srcEigenVec << std::endl;
             std::cout << "Dst Eigen Values " << dstEigenVal.transpose() << std::endl;
-            std::cout << dstEigenVec << std::endl;
-
-            pcl::io::savePCDFile("../results/bunny_src1.pcd", *srcCloud);
-            pcl::transformPointCloud(*srcCloud, *srcCloud, initTrans);
-            pcl::io::savePCDFile("../results/bunny_src2.pcd", *srcCloud);
-            std::cout << "src transform\n " << initTrans << std::endl;
+            std::cout << dstEigenVec << std::endl; 
         }
     }
 
@@ -151,7 +178,7 @@ int main(int argc, char* argv[]) {
             std::cout << "Failiure in " << iter+1 << " iterations" << std::endl;
             std::cout << finalTrans << std::endl;
         }
-    }    
+    }
     pcl::io::savePCDFile("../results/transformed_bunny.pcd", *srcCloud);
 
     return 0;

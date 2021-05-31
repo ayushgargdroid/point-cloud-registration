@@ -102,3 +102,21 @@ std::tuple<std::vector<int>, std::vector<int>> getNearestCorrespondences(pcl::Po
 float getFitnessScore(Eigen::MatrixXf srcPoints, Eigen::MatrixXf dstPoints) {
     return (dstPoints - srcPoints).norm();
 }
+
+template <typename T> int sgn(T val) {
+    return (T(0) < val) - (val < T(0));
+}
+
+bool verifyRightHandRule(Eigen::Matrix3f eigenVec) {
+    Eigen::Vector3f correctCol0 = eigenVec.col(1).cross(eigenVec.col(2)).transpose();
+    Eigen::Vector3f correctCol1 = eigenVec.col(2).cross(eigenVec.col(0)).transpose();
+    Eigen::Vector3f col0 = eigenVec.col(0).transpose();
+    Eigen::Vector3f col1 = eigenVec.col(1).transpose();
+
+    bool isCorrect = true;
+    for(int i = 0; i < 3; i++) {
+        if(!((sgn<float>(correctCol0(i)) == sgn<float>(col0(i))) && (sgn<float>(correctCol1(i)) == sgn<float>(col1(i)))))
+            return false;
+    }
+    return true;
+}

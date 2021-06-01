@@ -120,3 +120,28 @@ bool verifyRightHandRule(Eigen::Matrix3f eigenVec) {
     }
     return true;
 }
+
+Eigen::Matrix3f fixEigenVecToUnitAxes(Eigen::Matrix3f eigenVec) {
+    float xAng = acos(eigenVec.col(0).dot(Eigen::Vector3f::UnitX()));
+    float yAng = acos(eigenVec.col(1).dot(Eigen::Vector3f::UnitY()));
+    float zAng = acos(eigenVec.col(2).dot(Eigen::Vector3f::UnitZ()));
+
+    Eigen::Matrix3f fix = eigenVec;
+    bool fixed = fix.determinant() > 0;
+    if(xAng > yAng && xAng > zAng && !fixed) {
+        fix = eigenVec;
+        fix.col(0) = fix.col(1).cross(fix.col(2));
+        fixed = fix.determinant() > 0;
+    }
+    if(yAng > xAng && yAng > zAng && !fixed) {
+        fix = eigenVec;
+        fix.col(1) = fix.col(2).cross(fix.col(0));
+        fixed = fix.determinant() > 0;
+    }
+    if(zAng > xAng && zAng > yAng && !fixed) {
+        fix = eigenVec;
+        fix.col(2) = fix.col(0).cross(fix.col(1));
+        fixed = fix.determinant() > 0;
+    }
+    return fix;
+}

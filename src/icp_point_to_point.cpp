@@ -56,23 +56,36 @@ int main(int argc, char* argv[]) {
     if(estimateInitOri) {
         std::cout << "Using PCA for initial Orientation estimate" << std::endl;
         // Compute Eigen vectors for the point clouds for initial orientation using PCA
+        // Refer https://view.officeapps.live.com/op/view.aspx?src=https%3A%2F%2Fwww.cse.wustl.edu%2F~taoju%2Fcse554%2Flectures%2Flect08_Alignment.pptx&wdOrigin=BROWSELINK
         Eigen::Matrix3f srcEigenVec, dstEigenVec, dstEigenVecFix1, dstEigenVecFix2;
         Eigen::Vector3f srcEigenVal, dstEigenVal;
         Eigen::Matrix3f srcCov, dstCov;
 
         Eigen::MatrixXf srcPoints = convertPcltoEigen(srcCloud);
         Eigen::MatrixXf dstPoints = convertPcltoEigen(dstCloud);
-        Eigen::JacobiSVD<Eigen::MatrixXf> srcSvd(srcPoints.leftCols(3), Eigen::ComputeFullV);
-        Eigen::JacobiSVD<Eigen::MatrixXf> dstSvd(dstPoints.leftCols(3), Eigen::ComputeFullV);
-        srcEigenVal = srcSvd.singularValues().reverse();
-        dstEigenVal = dstSvd.singularValues().reverse();
-        srcEigenVec = srcSvd.matrixV().rowwise().reverse();
-        dstEigenVec = dstSvd.matrixV().rowwise().reverse();
+        Eigen::Vector4f srcCom(srcPoints.col(0).mean(), srcPoints.col(1).mean(), srcPoints.col(2).mean(), srcPoints.col(3).mean());
+        Eigen::Vector4f dstCom(dstPoints.col(0).mean(), dstPoints.col(1).mean(), dstPoints.col(2).mean(), dstPoints.col(3).mean());
+        srcPoints.rowwise() -= srcCom.transpose();
+        dstPoints.rowwise() -= dstCom.transpose();
+        Eigen::MatrixXf srcH = srcPoints.leftCols(3).transpose() * srcPoints.leftCols(3);
+        Eigen::MatrixXf dstH = dstPoints.leftCols(3).transpose() * dstPoints.leftCols(3);
+        Eigen::SelfAdjointEigenSolver<Eigen::Matrix3f> srcSolver(srcH);
+        Eigen::SelfAdjointEigenSolver<Eigen::Matrix3f> dstSolver(dstH);
+
+        srcEigenVal = srcSolver.eigenvalues();
+        srcEigenVec = fixEigenVecToUnitAxes(srcSolver.eigenvectors());
+        dstEigenVal = dstSolver.eigenvalues();
+        dstEigenVec = dstSolver.eigenvectors();
+
+        if(dstEigenVec(2,2) < 0) dstEigenVec *= -1;
+        std::cout << "DST vec normal - values " << dstEigenVal.transpose() << " det " << dstEigenVec.determinant() << std::endl;
+        std::cout << dstEigenVec << std::endl;
 
         // Compute Orientation estimate by aligning eigen values
         // PCA eigenvectors are not orthonormal so there is ambiguity, hence taking 2 guesses and finding which one has highest correspondences with dst cloud
         // This check should strictly follow right hand rule cross product
         if(verifyRightHandRule(dstEigenVec)) {
+            std::cout << "Did not need" << std::endl;
             initTrans.setIdentity();
             initTrans.block<3,3>(0,0) = dstEigenVec * srcEigenVec.transpose();
             pcl::transformPointCloud(*srcCloud, *srcCloud, initTrans);
@@ -85,6 +98,13 @@ int main(int argc, char* argv[]) {
             dstEigenVecFix2 = dstEigenVec;
             dstEigenVecFix1.col(1) *= -1;
             dstEigenVecFix2.col(0) *= -1;
+
+            if(debug) {
+                std::cout << "fix1 " << dstEigenVecFix1.determinant() << " " << dstEigenVecFix1.trace() << " " << (dstEigenVecFix1 * srcEigenVec.transpose()).trace() << std::endl;
+                std::cout << dstEigenVecFix1 << std::endl;
+                std::cout << "fix2 " << dstEigenVecFix2.determinant() << " " << dstEigenVecFix2.trace() << " " << (dstEigenVecFix2 * srcEigenVec.transpose()).trace() << std::endl;
+                std::cout << dstEigenVecFix2 << std::endl;
+            }
 
             oriTrans1.setIdentity();
             oriTrans1.block<3,3>(0,0) = dstEigenVecFix1 * srcEigenVec.transpose();
@@ -120,9 +140,9 @@ int main(int argc, char* argv[]) {
         finalTrans = initTrans * finalTrans;
 
         if(debug) {
-            std::cout << "Src Eigen Values " << srcEigenVal.transpose() << std::endl;
+            std::cout << "Src Eigen Values " << srcEigenVal.transpose() << " det " << srcEigenVec.determinant() << std::endl;
             std::cout << srcEigenVec << std::endl;
-            std::cout << "Dst Eigen Values " << dstEigenVal.transpose() << std::endl;
+            std::cout << "Dst Eigen Values " << dstEigenVal.transpose() << " det " << dstEigenVec.determinant() << std::endl;
             std::cout << dstEigenVec << std::endl; 
         }
     }

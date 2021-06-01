@@ -14,3 +14,4 @@ std::tuple<std::vector<int>, std::vector<int>> getNearestCorrespondences(pcl::Po
 
 float getFitnessScore(Eigen::MatrixXf srcPoints, Eigen::MatrixXf dstPoints);
 bool verifyRightHandRule(Eigen::Matrix3f eigenVec);
+Eigen::Matrix3f fixEigenVecToUnitAxes(Eigen::Matrix3f eigenVec);

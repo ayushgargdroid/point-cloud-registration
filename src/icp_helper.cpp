@@ -107,6 +107,17 @@ template <typename T> int sgn(T val) {
     return (T(0) < val) - (val < T(0));
 }
 
+Eigen::Affine3f vectorToHomography(Eigen::VectorXf x) {
+    Eigen::AngleAxisf rollAngle(x(0), Eigen::Vector3f::UnitX());
+    Eigen::AngleAxisf pitchAngle(x(1), Eigen::Vector3f::UnitY());
+    Eigen::AngleAxisf yawAngle(x(2), Eigen::Vector3f::UnitZ());
+    Eigen::Affine3f transform;
+    transform.setIdentity();
+    transform.rotate(yawAngle * pitchAngle * rollAngle);
+    transform.translation() << x(3), x(4), x(5);
+    return transform;
+}
+
 bool verifyRightHandRule(Eigen::Matrix3f eigenVec) {
     Eigen::Vector3f correctCol0 = eigenVec.col(1).cross(eigenVec.col(2)).transpose();
     Eigen::Vector3f correctCol1 = eigenVec.col(2).cross(eigenVec.col(0)).transpose();

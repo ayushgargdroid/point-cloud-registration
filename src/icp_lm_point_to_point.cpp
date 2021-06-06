@@ -1,4 +1,6 @@
 #include "../include/icp_svd.h"
+#include <ceres/ceres.h>
+#include <ceres/rotation.h>
 
 struct PointToPointOptimizationFunctor : LmOptimizationFunctor<float> {
 
@@ -22,13 +24,43 @@ struct PointToPointOptimizationFunctor : LmOptimizationFunctor<float> {
 
 };
 
+class CeresPointToPointOptimizationFunctor {
+public:
+    CeresPointToPointOptimizationFunctor(Eigen::Vector4f x, Eigen::Vector4f y){
+        for(int i = 0; i < 3; i++) {
+            m_srcPoint[i] = x[i];
+            m_dstPoint[i] = y[i];
+        }
+    }
+
+    template<typename T>
+    bool operator()(const T* quat, const T* transl, T* residual) const {
+        T rot[9];
+        ceres::QuaternionToRotation(quat, &rot[0]);
+
+        T transformedPt[3];
+        for(int i = 0; i < 3; i++) {
+            transformedPt[i] = rot[(i*3)] * m_srcPoint[0] + rot[(i*3)+1] * m_srcPoint[1] + rot[(i*3)+2] * m_srcPoint[2] + transl[i];
+        }
+
+        residual[0] = m_dstPoint[0] - transformedPt[0];
+        residual[1] = m_dstPoint[1] - transformedPt[1];
+        residual[2] = m_dstPoint[2] - transformedPt[2];
+        return true;
+    }
+
+private:
+    double m_srcPoint[3];
+    double m_dstPoint[3];
+};
+
 int main(int argc, char* argv[]) {
     const int angle = atoi(argv[1]);
     const bool estimateInitOri = atoi(argv[2]);
     const Eigen::Vector3f translation(0.0, 0.0, 0.0);
     const bool debug = true;
     const std::string pcdFile = "../bun_zipper_res3.pcd";
-    const int maxIters = 50;
+    const int maxIters = 20;
     const float maxError = 0.01;
     const float maxCorrespondenceDist = 0.001;
 
@@ -93,17 +125,42 @@ int main(int argc, char* argv[]) {
 
         Eigen::VectorXf x(6);
         x.setZero();
-        PointToPointOptimizationFunctor functor(static_cast<int>(srcPoints.rows()), srcPoints, dstPoints);
-        Eigen::NumericalDiff<PointToPointOptimizationFunctor> numDiff(functor);
-        Eigen::LevenbergMarquardt<Eigen::NumericalDiff<PointToPointOptimizationFunctor>, float> lm(numDiff);
-        lm.parameters.maxfev = 2000;
-        lm.parameters.factor = 20;
-        lm.parameters.xtol = 1e-10;
-        int ret = lm.minimize(x);
-        std::cout << "iter count: " << lm.iter << std::endl;
-        std::cout << "return status: " << ret << std::endl;
+        // PointToPointOptimizationFunctor functor(static_cast<int>(srcPoints.rows()), srcPoints, dstPoints);
+        // Eigen::NumericalDiff<PointToPointOptimizationFunctor> numDiff(functor);
+        // Eigen::LevenbergMarquardt<Eigen::NumericalDiff<PointToPointOptimizationFunctor>, float> lm(numDiff);
+        // lm.parameters.maxfev = 2000;
+        // lm.parameters.factor = 20;
+        // lm.parameters.xtol = 1e-10;
+        // int ret = lm.minimize(x);
+        // std::cout << "iter count: " << lm.iter << std::endl;
+        // std::cout << "return status: " << ret << std::endl;
 
-        Eigen::Affine3f computedTrans = vectorToHomography(x);
+        ///////////////////////////////
+        ceres::Problem problem;
+        double optTransl[3] = {0.0, 0.0, 0.0};
+        double optQuat[4]  = {1.0, 0.0, 0.0, 0.0};
+        for(int pti = 0; pti < srcPoints.rows(); pti++) {
+            // CeresPointToPointOptimizationFunctor<Eigen::Vector3f>* costFunctor = new CeresPointToPointOptimizationFunctor<Eigen::Vector3f>(srcPoints.row(pti), dstPoints.row(pti));
+            problem.AddResidualBlock(
+                new ceres::AutoDiffCostFunction<CeresPointToPointOptimizationFunctor, 3, 4, 3>(new CeresPointToPointOptimizationFunctor(srcPoints.row(pti), dstPoints.row(pti))), NULL, &optQuat[0], &optTransl[0]);
+        }
+        ceres::Solver::Options options;
+        options.minimizer_progress_to_stdout = true;
+        ceres::Solver::Summary summary;
+        ceres::Solve(options, &problem, &summary);
+        std::cout << summary.FullReport() << "\n\n";
+        Eigen::Quaternionf quatRot(optQuat[0], optQuat[1], optQuat[2], optQuat[3]);
+        Eigen::Affine3f computedTrans;
+        computedTrans.setIdentity();
+        computedTrans.rotate(quatRot);
+        computedTrans.matrix().col(3) << optTransl[0], optTransl[1], optTransl[2];
+        std::cout << "Ceres\n" << computedTrans.matrix() << std::endl;
+        std::cout << "Ceres \n" << optTransl[0] << " " << optTransl[1] << " " << optTransl[2] << std::endl;
+        // std::cout << optEuler[0] << " " << optEuler[1] << " " << optEuler[2] << std::endl;
+        // x << optEuler[0], optEuler[1], optEuler[2], optTransl[0], optTransl[1], optTransl[2];
+        ///////////////////////////////
+
+        // Eigen::Affine3f computedTrans = vectorToHomography(x);
         finalTrans = computedTrans * finalTrans;
         // Compute Fitness score
         srcPoints = (computedTrans.matrix() * srcPoints.transpose()).transpose();

@@ -5,6 +5,7 @@ set (CMAKE_CXX_STANDARD 17)
 
 find_package(PCL REQUIRED QUIET COMPONENTS io common kdtree search features)
 find_package(Eigen3 REQUIRED)
+find_package(Ceres REQUIRED)
 
 include_directories(${PCL_INCLUDE_DIRS})
 include_directories(include)
@@ -22,4 +23,4 @@ target_link_libraries(icp_point_to_point ${PCL_LIBRARIES} ${Eigen3_LIBRARIES})
 
 add_executable(icp_lm_point_to_point src/icp_lm_point_to_point.cpp src/icp_helper.cpp)
 target_precompile_headers(icp_lm_point_to_point PUBLIC include/project_includes.h)
-target_link_libraries(icp_lm_point_to_point ${PCL_LIBRARIES} ${Eigen3_LIBRARIES})
+target_link_libraries(icp_lm_point_to_point ${PCL_LIBRARIES} ${Eigen3_LIBRARIES} Ceres::ceres)

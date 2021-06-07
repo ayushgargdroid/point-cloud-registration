@@ -2,36 +2,6 @@
 
 #define DEG_TO_RAD(x) (x / 180.0 * M_PI)
 
-template<typename _Scalar, int NX = Eigen::Dynamic, int NY = Eigen::Dynamic>
-struct LmOptimizationFunctor {
-    
-    typedef _Scalar Scalar;
-    enum {
-        InputsAtCompileTime = NX,
-        ValuesAtCompileTime = NY
-    };
-
-    typedef Eigen::Matrix<Scalar, InputsAtCompileTime, 1> InputType;
-    typedef Eigen::Matrix<Scalar, ValuesAtCompileTime, 1> ValueType;
-    typedef Eigen::Matrix<Scalar, ValuesAtCompileTime, InputsAtCompileTime> JacobianType;
-
-    int m_inputs, m_values;
-
-    LmOptimizationFunctor() :
-        m_inputs(InputsAtCompileTime), m_values(ValuesAtCompileTime) {}
-
-    LmOptimizationFunctor(int inputs, int values) :
-        m_inputs(inputs), m_values(values) {}
-
-    int inputs() const {
-        return m_inputs; 
-    }
-
-    int values() const { 
-        return m_values; 
-    }
-};
-
 template <typename T> int sgn(T val);
 Eigen::Affine3f vectorToHomography(Eigen::VectorXf x);
 
